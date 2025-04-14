@@ -33,6 +33,13 @@ This repository is configured for deployment on Render.com.
 - `POST /api/calls/:callId/end` - End a call (only creator or admin)
 - `GET /api/calls` - Get call history for user
 
+### Audio Rooms
+- `GET /api/audio-rooms` - Get all audio rooms for the current user
+- `POST /api/audio-rooms` - Create a new audio room
+- `GET /api/audio-rooms/:id` - Get a specific audio room
+- `POST /api/audio-rooms/:id/join` - Join an audio room
+- `POST /api/audio-rooms/:id/leave` - Leave an audio room
+
 ## Local Development
 
 1. Clone the repository
@@ -68,4 +75,4 @@ const deployedUrl = 'https://your-render-url.onrender.com/api';
 
 ## License
 
-MIT 
+MIT

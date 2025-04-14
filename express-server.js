@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const Room = require('./models/Room');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -343,6 +344,128 @@ app.get('/api/calls', authenticateToken, (req, res) => {
     res.status(500).json({ message: 'Server error retrieving calls' });
   }
 });
+
+// Audio room specific routes
+app.get('/api/audio-rooms', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const rooms = await Room.find({ $or: [{ host: userId }, { participants: userId }] })
+      .sort({ createdAt: -1 })
+      .populate('host', 'name email')
+      .populate('participants', 'name email');
+    
+    res.json(rooms);
+  } catch (error) {
+    console.error('Error fetching audio rooms:', error);
+    res.status(500).json({ message: 'Failed to fetch rooms' });
+  }
+});
+
+app.post('/api/audio-rooms', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const { roomName, settings } = req.body;
+    
+    const room = new Room({
+      roomName: roomName || `Room-${Date.now()}`,
+      host: userId,
+      participants: [userId],
+      settings: settings || { video: false, audio: true }
+    });
+    
+    await room.save();
+    
+    // Create a call in Stream API
+    const streamCall = await createStreamCall(room._id.toString(), 'audio_room');
+    
+    // Update the room with Stream call details
+    room.streamCallId = streamCall.id;
+    await room.save();
+    
+    res.status(201).json(room);
+  } catch (error) {
+    console.error('Error creating audio room:', error);
+    res.status(500).json({ message: 'Failed to create room' });
+  }
+});
+
+app.get('/api/audio-rooms/:id', authenticateToken, async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id)
+      .populate('host', 'name email')
+      .populate('participants', 'name email');
+      
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    
+    res.json(room);
+  } catch (error) {
+    console.error('Error fetching room:', error);
+    res.status(500).json({ message: 'Failed to fetch room' });
+  }
+});
+
+app.post('/api/audio-rooms/:id/join', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const room = await Room.findById(req.params.id);
+    
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    
+    // Add user to participants if not already there
+    if (!room.participants.includes(userId)) {
+      room.participants.push(userId);
+      await room.save();
+    }
+    
+    res.json(room);
+  } catch (error) {
+    console.error('Error joining room:', error);
+    res.status(500).json({ message: 'Failed to join room' });
+  }
+});
+
+app.post('/api/audio-rooms/:id/leave', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const room = await Room.findById(req.params.id);
+    
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    
+    // Remove user from participants
+    room.participants = room.participants.filter(
+      participant => participant.toString() !== userId
+    );
+    
+    // If host leaves and there are other participants, assign new host
+    if (room.host.toString() === userId && room.participants.length > 0) {
+      room.host = room.participants[0];
+    }
+    
+    // If room is empty, close it
+    if (room.participants.length === 0) {
+      await Room.findByIdAndDelete(req.params.id);
+      return res.json({ message: 'Room closed' });
+    }
+    
+    await room.save();
+    res.json(room);
+  } catch (error) {
+    console.error('Error leaving room:', error);
+    res.status(500).json({ message: 'Failed to leave room' });
+  }
+});
+
+// Helper function to create a Stream call
+async function createStreamCall(roomId, type = 'default') {
+  // TODO: Implement Stream API call
+  return { id: roomId, type };
+}
 
 // Root route for info
 app.get('/', (req, res) => {
