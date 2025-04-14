@@ -188,7 +188,7 @@ app.get('/api/auth/user', authenticateToken, (req, res) => {
     }
     
     // Generate a Stream token for the user
-    const streamToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidGVzdF91c2VyX2ZpeGVkIn0.lN44-voKI7Tn3hK6EiG7VtsvpJy7fprC5QJqQI-akwM';
+    const streamToken = 'mock-stream-token';
     
     res.status(200).json({
       userId: user.userId,
