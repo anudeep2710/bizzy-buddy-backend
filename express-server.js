@@ -43,6 +43,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Get all users - New endpoint for admin to view registered users
+app.get('/api/users', (req, res) => {
+  try {
+    // Return users without exposing passwords
+    const safeUsers = users.map(({ password, ...user }) => user);
+    res.status(200).json(safeUsers);
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ message: 'Server error fetching users' });
+  }
+});
+
 // Auth routes
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -349,11 +361,10 @@ app.get('/api/calls', authenticateToken, (req, res) => {
 app.get('/api/audio-rooms', authenticateToken, async (req, res) => {
   try {
     const { userId } = req.user;
-    const rooms = await Room.find({ $or: [{ host: userId }, { participants: userId }] })
-      .sort({ createdAt: -1 })
-      .populate('host', 'name email')
-      .populate('participants', 'name email');
+    const rooms = await Room.find({ $or: [{ host: userId }, { participants: userId }] });
     
+    // We don't need to populate users since we're using in-memory data
+    // Just return the rooms
     res.json(rooms);
   } catch (error) {
     console.error('Error fetching audio rooms:', error);
@@ -366,21 +377,19 @@ app.post('/api/audio-rooms', authenticateToken, async (req, res) => {
     const { userId } = req.user;
     const { roomName, settings } = req.body;
     
-    const room = new Room({
+    // Create room using our in-memory model
+    const room = Room.create({
       roomName: roomName || `Room-${Date.now()}`,
       host: userId,
       participants: [userId],
       settings: settings || { video: false, audio: true }
     });
     
-    await room.save();
-    
     // Create a call in Stream API
-    const streamCall = await createStreamCall(room._id.toString(), 'audio_room');
+    const streamCall = await createStreamCall(room.id, 'audio_room');
     
     // Update the room with Stream call details
     room.streamCallId = streamCall.id;
-    await room.save();
     
     res.status(201).json(room);
   } catch (error) {
@@ -391,15 +400,28 @@ app.post('/api/audio-rooms', authenticateToken, async (req, res) => {
 
 app.get('/api/audio-rooms/:id', authenticateToken, async (req, res) => {
   try {
-    const room = await Room.findById(req.params.id)
-      .populate('host', 'name email')
-      .populate('participants', 'name email');
+    const room = await Room.findById(req.params.id);
       
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
     
-    res.json(room);
+    // Add user info (simulating populate in mongoose)
+    const populatedRoom = {
+      ...room,
+      host: users.find(u => u.userId === room.host) || room.host,
+      participants: room.participants.map(p => {
+        const user = users.find(u => u.userId === p);
+        if (user) {
+          // Return user without password
+          const { password, ...userWithoutPassword } = user;
+          return userWithoutPassword;
+        }
+        return p;
+      })
+    };
+    
+    res.json(populatedRoom);
   } catch (error) {
     console.error('Error fetching room:', error);
     res.status(500).json({ message: 'Failed to fetch room' });
@@ -418,7 +440,7 @@ app.post('/api/audio-rooms/:id/join', authenticateToken, async (req, res) => {
     // Add user to participants if not already there
     if (!room.participants.includes(userId)) {
       room.participants.push(userId);
-      await room.save();
+      await Room.findByIdAndUpdate(req.params.id, { participants: room.participants });
     }
     
     res.json(room);
@@ -438,23 +460,29 @@ app.post('/api/audio-rooms/:id/leave', authenticateToken, async (req, res) => {
     }
     
     // Remove user from participants
-    room.participants = room.participants.filter(
-      participant => participant.toString() !== userId
+    const updatedParticipants = room.participants.filter(
+      participant => participant !== userId
     );
     
     // If host leaves and there are other participants, assign new host
-    if (room.host.toString() === userId && room.participants.length > 0) {
-      room.host = room.participants[0];
+    let updatedHost = room.host;
+    if (room.host === userId && updatedParticipants.length > 0) {
+      updatedHost = updatedParticipants[0];
     }
     
     // If room is empty, close it
-    if (room.participants.length === 0) {
+    if (updatedParticipants.length === 0) {
       await Room.findByIdAndDelete(req.params.id);
       return res.json({ message: 'Room closed' });
     }
     
-    await room.save();
-    res.json(room);
+    // Update the room
+    const updatedRoom = await Room.findByIdAndUpdate(req.params.id, { 
+      participants: updatedParticipants,
+      host: updatedHost
+    });
+    
+    res.json(updatedRoom);
   } catch (error) {
     console.error('Error leaving room:', error);
     res.status(500).json({ message: 'Failed to leave room' });
@@ -485,6 +513,11 @@ app.get('/', (req, res) => {
         description: 'Login a user'
       },
       {
+        path: '/api/users',
+        method: 'GET',
+        description: 'Get all registered users'
+      },
+      {
         path: '/api/calls',
         method: 'POST',
         description: 'Create a new call (authenticated)'
@@ -493,6 +526,16 @@ app.get('/', (req, res) => {
         path: '/api/calls',
         method: 'GET',
         description: 'Get call history (authenticated)'
+      },
+      {
+        path: '/api/audio-rooms',
+        method: 'GET',
+        description: 'Get audio rooms (authenticated)'
+      },
+      {
+        path: '/api/audio-rooms',
+        method: 'POST',
+        description: 'Create a new audio room (authenticated)'
       }
     ]
   });
