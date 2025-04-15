@@ -18,8 +18,17 @@ const streamClient = StreamChat.getInstance(
   process.env.STREAM_API_SECRET
 );
 
+// CORS configuration
+const corsOptions = {
+  origin: '*', // Allow all origins for now
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400 // 24 hours
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Connect to MongoDB
