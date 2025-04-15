@@ -30,17 +30,23 @@ STREAM_API_SECRET=your_stream_api_secret
 
 ## Installation
 
-1. Install dependencies:
+1. Clone the repository:
+```bash
+git clone https://github.com/anudeep2710/bizzy-buddy-backend.git
+cd bizzy-buddy-backend
+```
+
+2. Install dependencies:
 ```bash
 npm install
 ```
 
-2. Start MongoDB:
+3. Start MongoDB:
 ```bash
 # Make sure MongoDB is running on your system
 ```
 
-3. Start the server:
+4. Start the server:
 ```bash
 # Development mode
 npm run dev
@@ -104,4 +110,21 @@ For production deployment:
 1. Set up proper environment variables
 2. Use a process manager like PM2
 3. Set up proper MongoDB security
-4. Use HTTPS in production 
+4. Use HTTPS in production
+
+## Connect with Flutter App
+
+Update the `baseUrl` in your Flutter app's `ApiService` to point to your deployed API:
+
+```dart
+// For production
+const deployedUrl = 'https://your-render-url.onrender.com/api';
+
+// For local testing
+// Android: 'http://10.0.2.2:5000/api'
+// iOS: 'http://localhost:5000/api'
+```
+
+## License
+
+MIT

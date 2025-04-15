@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
 const { StreamChat } = require('stream-chat');
+require('dotenv').config();
 
 // Initialize Express app
 const app = express();
@@ -16,12 +17,16 @@ app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/bizzybuddy', {
     useNewUrlParser: true,
     useUnifiedTopology: true
+}).then(() => {
+    console.log('Connected to MongoDB');
+}).catch((error) => {
+    console.error('MongoDB connection error:', error);
 });
 
 // Stream Chat client
 const streamClient = StreamChat.getInstance(
-    process.env.STREAM_API_KEY || 'kkggw6byahn8',
-    process.env.STREAM_API_SECRET || 'your_stream_api_secret'
+    process.env.STREAM_API_KEY,
+    process.env.STREAM_API_SECRET
 );
 
 // Models
@@ -34,12 +39,12 @@ const authenticateToken = async (req, res, next) => {
     try {
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
-
+        
         if (!token) {
             return res.status(401).json({ message: 'Access token is required' });
         }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+        
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const user = await User.findById(decoded.userId);
 
         if (!user) {
@@ -58,19 +63,19 @@ const authenticateToken = async (req, res, next) => {
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
-
+        
         // Check if user exists
         const existingUser = await User.findOne({ email });
         if (existingUser) {
             return res.status(400).json({ message: 'User already exists' });
         }
-
+        
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Create Stream user token
         const streamToken = streamClient.createToken(email);
-
+        
         // Create user
         const user = new User({
             name,
@@ -79,13 +84,13 @@ app.post('/api/auth/register', async (req, res) => {
             role: 'user',
             streamToken
         });
-
+        
         await user.save();
-
+        
         // Generate JWT token
         const token = jwt.sign(
             { userId: user._id },
-            process.env.JWT_SECRET || 'your_jwt_secret',
+            process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -106,7 +111,7 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-
+        
         // Find user
         const user = await User.findOne({ email });
         if (!user) {
@@ -125,11 +130,11 @@ app.post('/api/auth/login', async (req, res) => {
         // Update user's Stream token
         user.streamToken = streamToken;
         await user.save();
-
+        
         // Generate JWT token
         const token = jwt.sign(
             { userId: user._id },
-            process.env.JWT_SECRET || 'your_jwt_secret',
+            process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -173,9 +178,9 @@ app.post('/api/audio-rooms', authenticateToken, async (req, res) => {
             participants: [req.user._id],
             settings: settings || { audio: true, video: false }
         });
-
+        
         await room.save();
-
+        
         // Create Stream call
         const streamCall = await streamClient.createCall({
             id: room._id.toString(),
@@ -186,7 +191,7 @@ app.post('/api/audio-rooms', authenticateToken, async (req, res) => {
         // Update room with Stream call ID
         room.streamCallId = streamCall.id;
         await room.save();
-
+        
         res.status(201).json(room);
     } catch (error) {
         console.error('Create room error:', error);
@@ -203,7 +208,7 @@ app.get('/api/audio-rooms', authenticateToken, async (req, res) => {
             ]
         }).populate('host', 'name email')
           .populate('participants', 'name email');
-
+        
         res.json(rooms);
     } catch (error) {
         console.error('Get rooms error:', error);
@@ -218,13 +223,13 @@ app.post('/api/audio-rooms/:roomId/join', authenticateToken, async (req, res) =>
         if (!room) {
             return res.status(404).json({ message: 'Room not found' });
         }
-
+        
         // Add user to participants if not already there
         if (!room.participants.includes(req.user._id)) {
             room.participants.push(req.user._id);
             await room.save();
         }
-
+        
         res.json(room);
     } catch (error) {
         console.error('Join room error:', error);
@@ -239,23 +244,23 @@ app.post('/api/audio-rooms/:roomId/leave', authenticateToken, async (req, res) =
         if (!room) {
             return res.status(404).json({ message: 'Room not found' });
         }
-
+        
         // Remove user from participants
         room.participants = room.participants.filter(
             participant => participant.toString() !== req.user._id.toString()
         );
-
+        
         // If host leaves and there are other participants, assign new host
         if (room.host.toString() === req.user._id.toString() && room.participants.length > 0) {
             room.host = room.participants[0];
         }
-
+        
         // If room is empty, delete it
         if (room.participants.length === 0) {
             await Room.findByIdAndDelete(req.params.roomId);
             return res.json({ message: 'Room closed' });
         }
-
+        
         await room.save();
         res.json(room);
     } catch (error) {
