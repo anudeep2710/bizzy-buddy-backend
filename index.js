@@ -1,3 +1,4 @@
+// BizzyBuddy Backend API v1.0.0
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
